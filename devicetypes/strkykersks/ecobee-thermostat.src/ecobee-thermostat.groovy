@@ -24,26 +24,27 @@
  *
  * 	0.9.12 - Fix for setting custom Thermostat Programs (Comfort Settings)
  *	0.9.13 - Add attributes to indicate custom program names to child thermostats (smart1, smart2, etc)
+ *	0.9.14 - Port over to new repository
  *
  */
 
-def getVersionNum() { return "0.9.13" }
+def getVersionNum() { return "0.9.14" }
 private def getVersionLabel() { return "Ecobee Thermostat Version ${getVersionNum()}" }
 
  
 metadata {
-	definition (name: "Ecobee Thermostat", namespace: "smartthings", author: "SmartThings") {
+	definition (name: "Ecobee Thermostat", namespace: "strykersks", author: "SmartThings") {
 		capability "Actuator"
 		capability "Thermostat"
-        capability "Sensor"
+        	capability "Sensor"
 		capability "Refresh"
 		capability "Relative Humidity Measurement"
 		capability "Temperature Measurement"
 		// capability "Presence Sensor"
-        capability "Motion Sensor"
+        	capability "Motion Sensor"
         
-        // Extended Set of Thermostat Capabilities
-        capability "Thermostat Cooling Setpoint"
+        	// Extended Set of Thermostat Capabilities
+        	capability "Thermostat Cooling Setpoint"
 		capability "Thermostat Fan Mode"
 		capability "Thermostat Heating Setpoint"
 		capability "Thermostat Mode"
@@ -52,7 +53,7 @@ metadata {
             
 
 		command "setTemperature"
-        command "auxHeatOnly"
+        	command "auxHeatOnly"
 
 		command "generateEvent"
 		command "raiseSetpoint"
@@ -60,41 +61,41 @@ metadata {
 		command "resumeProgram"
 		command "switchMode"
         
-        command "setThermostatProgram"
-        command "home"
-        command "sleep"
-        command "away"
+        	command "setThermostatProgram"
+        	command "home"
+        	command "sleep"
+        	command "away"
         
-        command "fanOff"  // Missing from the Thermostat standard capability set
-        command "noOp" // Workaround for formatting issues 
-        command "setStateVariable"
+        	command "fanOff"  // Missing from the Thermostat standard capability set
+        	command "noOp" // Workaround for formatting issues 
+        	command "setStateVariable"
         
         
 
 		// Capability "Thermostat"
-        attribute "temperatureScale", "string"
+        	attribute "temperatureScale", "string"
 		attribute "thermostatSetpoint","number"
 		attribute "thermostatStatus","string"
-        attribute "apiConnected","string"
+        	attribute "apiConnected","string"
         
 		attribute "currentProgram","string"
-        attribute "currentProgramId","string"		
-        attribute "weatherSymbol", "string"        
-        attribute "debugEventFromParent","string"
-        attribute "logo", "string"
-        attribute "timeOfDate", "enum", ["day", "night"]
-        attribute "lastPoll", "string"
+        	attribute "currentProgramId","string"		
+        	attribute "weatherSymbol", "string"        
+        	attribute "debugEventFromParent","string"
+        	attribute "logo", "string"
+        	attribute "timeOfDate", "enum", ["day", "night"]
+        	attribute "lastPoll", "string"
         
-        attribute "smart1", "string"
-        attribute "smart2", "string"
-        attribute "smart3", "string"
-        attribute "smart4", "string"
-        attribute "smart5", "string"
-        attribute "smart6", "string"
-        attribute "smart7", "string"
-        attribute "smart8", "string"
-        attribute "smart9", "string"
-        attribute "smart10", "string"
+        	attribute "smart1", "string"
+        	attribute "smart2", "string"
+        	attribute "smart3", "string"
+        	attribute "smart4", "string"
+        	attribute "smart5", "string"
+        	attribute "smart6", "string"
+        	attribute "smart7", "string"
+        	attribute "smart8", "string"
+        	attribute "smart9", "string"
+        	attribute "smart10", "string"
 	}
 
 	simulator { }
