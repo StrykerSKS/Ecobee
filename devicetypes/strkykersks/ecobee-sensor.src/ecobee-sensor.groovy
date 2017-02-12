@@ -13,14 +13,15 @@
  *  for the specific language governing permissions and limitations under the License.
  * 
  *  See Changelog for change history
+ *  0.9.9 - Port into new repository
  *
  */
 
-def getVersionNum() { return "0.9.8" }
-private def getVersionLabel() { return "Ecobee Sensor Version ${getVersionNum()}-RC8" }
+def getVersionNum() { return "0.9.9" }
+private def getVersionLabel() { return "Ecobee Sensor Version ${getVersionNum()}" }
 
 metadata {
-	definition (name: "Ecobee Sensor", namespace: "smartthings", author: "SmartThings") {
+	definition (name: "Ecobee Sensor", namespace: "strykersks", author: "SmartThings") {
 		capability "Sensor"
 		capability "Temperature Measurement"
 		capability "Motion Sensor"
@@ -50,7 +51,7 @@ metadata {
 					[value: 35, color: "#d04e00"],
 					[value: 37, color: "#d04e00"],
 					// Fahrenheit Color Range
-                	[value: 40, color: "#1e9cbb"],
+                			[value: 40, color: "#1e9cbb"],
 					[value: 59, color: "#1e9cbb"],
 					[value: 67, color: "#1e9cbb"],
                     
