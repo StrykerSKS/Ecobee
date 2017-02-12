@@ -13,19 +13,21 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Changes:
+ * 	0.1.2 - Port into new repository
  */
  
  /**
   * TODO: Add support for more than on/off such as programs
   */
-def getVersionNum() { return "0.1.1" }
+def getVersionNum() { return "0.1.2" }
 private def getVersionLabel() { return "ecobee Routines Version ${getVersionNum()}" }
 
 
 
 definition(
 	name: "ecobee Open Contacts",
-	namespace: "smartthings",
+	namespace: "strykersks",
 	author: "Sean Kendall Schneyer (smartthings at linuxbox dot org)",
 	description: "Support for changing ecobee runtime based on status of contact sensors",
 	category: "Convenience",
