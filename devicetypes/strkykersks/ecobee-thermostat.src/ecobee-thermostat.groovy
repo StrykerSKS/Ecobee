@@ -1,21 +1,3 @@
-Skip to content
-This repository
-Search
-Pull requests
-Issues
-Gist
- @StrykerSKS
- Sign out
- Watch 1
-  Star 0
-  Fork 2 SANdood/Ecobee
- Code  Issues 0  Pull requests 0  Projects 0  Wiki  Pulse  Graphs
-Branch: master Find file Copy pathEcobee/ecobee-thermostat.groovy
-3fc74ff  a day ago
-@SANdood SANdood v0.10.10 - Minor tweaks to device's "Recently" notifications
-1 contributor
-RawBlameHistory     
-1615 lines (1399 sloc)  78.6 KB
 /**
  *  Based on original version Copyright 2015 SmartThings
  *  Additions Copyright 2016 Sean Kendall Schneyer
@@ -1630,5 +1612,3 @@ def getStockTempColors() {
         [value: 96, color: "#bc2323"]
     ]       
 }
-Contact GitHub API Training Shop Blog About
-© 2017 GitHub, Inc. Terms Privacy Security Status Help
