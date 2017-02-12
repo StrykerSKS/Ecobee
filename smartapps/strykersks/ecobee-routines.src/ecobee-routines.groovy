@@ -14,19 +14,20 @@
  *  for the specific language governing permissions and limitations under the License.
  *
  */
-def getVersionNum() { return "0.1.4" }
+def getVersionNum() { return "0.1.5" }
 private def getVersionLabel() { return "ecobee Routines Version ${getVersionNum()}" }
 
 /*
  *
  * 0.1.4 - Fix Custom Mode Handling
+ * 0.1.5 - Port into new repository
  *
  */
 
 
 definition(
 	name: "ecobee Routines",
-	namespace: "smartthings",
+	namespace: "strykersks",
 	author: "Sean Kendall Schneyer (smartthings at linuxbox dot org)",
 	description: "Support for changing ecobee Programs based on SmartThings Routine execution or Mode changes",
 	category: "Convenience",
