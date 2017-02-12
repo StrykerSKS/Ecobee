@@ -26,15 +26,16 @@
  *
  * 	0.9.18 - Fix customer Program handling
  *	0.9.19 - Add attributes to indicate custom program names to child thermostats (smart1, smart2, etc)
- *  0.9.20 - Allow installations where no "location" is set. Useful for virtual hubs and testing
+ *  	0.9.20 - Allow installations where no "location" is set. Useful for virtual hubs and testing
+ *	0.9.21 - Port into new repository
  *
  */  
-def getVersionNum() { return "0.9.20" }
+def getVersionNum() { return "0.9.21" }
 private def getVersionLabel() { return "Ecobee (Connect) Version ${getVersionNum()}" }
 private def getHelperSmartApps() {
 	return [ 
     		[name: "ecobeeRoutinesChild", appName: "ecobee Routines",  
-            	namespace: "smartthings", multiple: true, 
+            	namespace: "strykersks", multiple: true, 
                 title: "Create new Routines Handler..."], 
 			[name: "ecobeeContactsChild", appName: "ecobee Open Contacts",  
             	namespace: "smartthings", multiple: true, 
