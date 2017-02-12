@@ -1,6 +1,25 @@
+Skip to content
+This repository
+Search
+Pull requests
+Issues
+Gist
+ @StrykerSKS
+ Sign out
+ Watch 1
+  Star 0
+  Fork 2 SANdood/Ecobee
+ Code  Issues 0  Pull requests 0  Projects 0  Wiki  Pulse  Graphs
+Branch: master Find file Copy pathEcobee/ecobee-thermostat.groovy
+3fc74ff  a day ago
+@SANdood SANdood v0.10.10 - Minor tweaks to device's "Recently" notifications
+1 contributor
+RawBlameHistory     
+1615 lines (1399 sloc)  78.6 KB
 /**
  *  Based on original version Copyright 2015 SmartThings
  *  Additions Copyright 2016 Sean Kendall Schneyer
+ *  Additions Copyright 2017 Barry A. Burke
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -19,32 +38,43 @@
  * 	Updates by Sean Kendall Schneyer <smartthings@linuxbox.org>
  * 	Date: 2015-12-23
  *
+ *	Updates by Barry A. Burke (storageanarchy@gmail.com)
+ *  https://github.com/SANdood/Ecobee
  *
  *  See Changelog for change history 
  *
  * 	0.9.12 - Fix for setting custom Thermostat Programs (Comfort Settings)
  *	0.9.13 - Add attributes to indicate custom program names to child thermostats (smart1, smart2, etc)
- *	0.9.14 - Port over to new repository
+ * 	0.10.1 - Massive overhaul for performance, efficiency, improved UI, enhanced functionality
+ *	0.10.2 - Beta release of Barry's updated version
+ *	0.10.3 - Added support for setVacationFanMinOnTime() and deleteVacation()
+ *	0.10.4 - Fixed temperatureDisplay
+ *	0.10.5 - Tuned up device notifications (icons, colors, etc.)
+ *	0.10.6 - Changed outside temp to use Ecobee stock temperature backgroundColors
+ *	0.10.7 - Fix heat/cool setpoint tiles
+ *	0.10.8 - Added programsList attribute - list of available "climates" on this thermostat
+ *  0.10.9 - Fixed double FtoC conversions
+ *	0.10.10- holdEndsAt suppression
  *
  */
 
-def getVersionNum() { return "0.9.14" }
+def getVersionNum() { return "0.10.10" }
 private def getVersionLabel() { return "Ecobee Thermostat Version ${getVersionNum()}" }
-
+import groovy.json.JsonSlurper
  
 metadata {
-	definition (name: "Ecobee Thermostat", namespace: "strykersks", author: "SmartThings") {
+	definition (name: "Ecobee Thermostat", namespace: "smartthings", author: "SmartThings") {
 		capability "Actuator"
 		capability "Thermostat"
-        	capability "Sensor"
+        capability "Sensor"
 		capability "Refresh"
 		capability "Relative Humidity Measurement"
 		capability "Temperature Measurement"
 		// capability "Presence Sensor"
-        	capability "Motion Sensor"
+        capability "Motion Sensor"
         
-        	// Extended Set of Thermostat Capabilities
-        	capability "Thermostat Cooling Setpoint"
+        // Extended Set of Thermostat Capabilities
+        capability "Thermostat Cooling Setpoint"
 		capability "Thermostat Fan Mode"
 		capability "Thermostat Heating Setpoint"
 		capability "Thermostat Mode"
@@ -53,7 +83,7 @@ metadata {
             
 
 		command "setTemperature"
-        	command "auxHeatOnly"
+        command "auxHeatOnly"
 
 		command "generateEvent"
 		command "raiseSetpoint"
@@ -61,49 +91,92 @@ metadata {
 		command "resumeProgram"
 		command "switchMode"
         
-        	command "setThermostatProgram"
-        	command "home"
-        	command "sleep"
-        	command "away"
+        command "setThermostatProgram"
+        command "setFanMinOnTime"
+        command "setVacationFanMinOnTime"
+        command "deleteVacation"
+        command "home"
+        command "present"
+
+// Unfortunately we cannot overload the internal definition of 'sleep()', and calling this will silently fail (actually, it does a
+// "sleep(0)")
+//		command "sleep"
+        command "asleep"
+        command "night"				// this is probably the appropriate SmartThings device command to call, matches ST mode
+        command "away"
         
-        	command "fanOff"  // Missing from the Thermostat standard capability set
-        	command "noOp" // Workaround for formatting issues 
-        	command "setStateVariable"
-        
-        
+        command "fanOff"  			// Missing from the Thermostat standard capability set
+        command "noOp" 				// Workaround for formatting issues 
+        command "setStateVariable"
 
 		// Capability "Thermostat"
-        	attribute "temperatureScale", "string"
+        attribute "temperatureScale", "string"
 		attribute "thermostatSetpoint","number"
 		attribute "thermostatStatus","string"
-        	attribute "apiConnected","string"
+        attribute "apiConnected","string"
         
+		attribute "currentProgramName", "string"
+        attribute "currentProgramId","string"
 		attribute "currentProgram","string"
-        	attribute "currentProgramId","string"		
-        	attribute "weatherSymbol", "string"        
-        	attribute "debugEventFromParent","string"
-        	attribute "logo", "string"
-        	attribute "timeOfDate", "enum", ["day", "night"]
-        	attribute "lastPoll", "string"
+		attribute "scheduledProgramName", "string"
+        attribute "scheduledProgramId","string"
+		attribute "scheduledProgram","string"
+        attribute "weatherSymbol", "string"        
+        attribute "debugEventFromParent","string"
+        attribute "logo", "string"
+        attribute "timeOfDate", "enum", ["day", "night"]
+        attribute "lastPoll", "string"
         
-        	attribute "smart1", "string"
-        	attribute "smart2", "string"
-        	attribute "smart3", "string"
-        	attribute "smart4", "string"
-        	attribute "smart5", "string"
-        	attribute "smart6", "string"
-        	attribute "smart7", "string"
-        	attribute "smart8", "string"
-        	attribute "smart9", "string"
-        	attribute "smart10", "string"
+		attribute "equipmentStatus", "string"
+        attribute "humiditySetpoint", "string"
+        attribute "weatherTemperature", "number"
+		attribute "decimalPrecision", "number"
+		attribute "temperatureDisplay", "string"
+		attribute "equipmentOperatingState", "string"
+        attribute "coolMode", "string"
+		attribute "heatMode", "string"
+        attribute "autoMode", "string"
+		attribute "heatStages", "number"
+		attribute "coolStages", "number"
+		attribute "hasHeatPump", "string"
+        attribute "hasForcedAir", "string"
+        attribute "hasElectric", "string"
+        attribute "hasBoiler", "string"
+		attribute "auxHeatMode", "string"
+        attribute "motion", "string"
+		attribute "heatRangeHigh", "number"
+		attribute "heatRangeLow", "number"
+		attribute "coolRangeHigh", "number"
+		attribute "coolRangeLow", "number"
+		attribute "heatRange", "string"
+		attribute "coolRange", "string"
+		attribute "thermostatHold", "string"
+		attribute "holdStatus", "string"
+        attribute "heatDifferential", "number"
+        attribute "coolDifferential", "number"
+        attribute "fanMinOnTime", "number"
+        attribute "programsList", "enum"
+		
+		// attribute "debugLevel", "number"
+		
+        attribute "smart1", "string"
+        attribute "smart2", "string"
+        attribute "smart3", "string"
+        attribute "smart4", "string"
+        attribute "smart5", "string"
+        attribute "smart6", "string"
+        attribute "smart7", "string"
+        attribute "smart8", "string"
+        attribute "smart9", "string"
+        attribute "smart10", "string"
 	}
 
 	simulator { }
 
-    	tiles(scale: 2) {      
+    tiles(scale: 2) {      
               
-		multiAttributeTile(name:"tempSummary", type:"thermostat", width:6, height:4) {
-			tileAttribute("device.temperature", key: "PRIMARY_CONTROL") {
+		multiAttributeTile(name:"temperatureDisplay", type:"thermostat", width:6, height:4) {
+			tileAttribute("device.temperatureDisplay", key: "PRIMARY_CONTROL") {
 				attributeState("default", label:'${currentValue}', unit:"dF")
 			}
 
@@ -115,9 +188,10 @@ metadata {
 			}
 
 			tileAttribute("device.thermostatOperatingState", key: "OPERATING_STATE") {
-				attributeState("idle", backgroundColor:"#44b621")
-				attributeState("heating", backgroundColor:"#ffa81e")
-				attributeState("cooling", backgroundColor:"#269bd2")
+				attributeState("idle", backgroundColor:"#d28de0")			// ecobee purple/magenta
+                attributeState("fan only", backgroundColor:"66cc00")		// ecobee green
+				attributeState("heating", backgroundColor:"#ff9c14")		// ecobee snowflake blue
+				attributeState("cooling", backgroundColor:"#2db9e7")		// ecobee flame orange
 			}
 			tileAttribute("device.thermostatMode", key: "THERMOSTAT_MODE") {
 				attributeState("off", label:'${name}')
@@ -126,13 +200,13 @@ metadata {
                 attributeState("auto", label:'${name}')
 			}
             tileAttribute("device.heatingSetpoint", key: "HEATING_SETPOINT") {
-            	attributeState("default", label:'${currentValue}', unit:"dF")
+            	attributeState("default", label:'${currentValue}°', unit:"dF")
             }
 			tileAttribute("device.coolingSetpoint", key: "COOLING_SETPOINT") {
-				attributeState("default", label:'${currentValue}', unit:"dF")
+				attributeState("default", label:'${currentValue}°', unit:"dF")
 			}
 
-        } // End multiAttributeTile
+		} // End multiAttributeTile
         
 
         // Workaround until they fix the Thermostat multiAttributeTile. Only use this one OR the above one, not both
@@ -151,9 +225,10 @@ metadata {
 			}
 
 			tileAttribute("device.thermostatOperatingState", key: "OPERATING_STATE") {
-				attributeState("idle", backgroundColor:"#44b621")
-				attributeState("heating", backgroundColor:"#ffa81e")
-				attributeState("cooling", backgroundColor:"#269bd2")
+				attributeState("idle", backgroundColor:"#d28de0")			// ecobee purple/magenta
+                attributeState("fan only", backgroundColor:"#66cc00")		// ecobee green
+				attributeState("heating", backgroundColor:"#ff9c14")		// ecobee snowflake blue
+				attributeState("cooling", backgroundColor:"#2db9e7")		// ecobee flame orange
 			}
 
 			tileAttribute("device.thermostatMode", key: "THERMOSTAT_MODE") {
@@ -163,27 +238,38 @@ metadata {
                 attributeState("auto", label:'${name}')
 			}
             tileAttribute("device.heatingSetpoint", key: "HEATING_SETPOINT") {
-            	attributeState("default", label:'${currentValue}', unit:"dF")
+            	attributeState("default", label:'${currentValue}°', unit:"dF")
             }
 			tileAttribute("device.coolingSetpoint", key: "COOLING_SETPOINT") {
-				attributeState("default", label:'${currentValue}', unit:"dF")
+				attributeState("default", label:'${currentValue}°', unit:"dF")
 			}
-
         }
 
         // Show status of the API Connection for the Thermostat
-		standardTile("apiStatus", "device.apiConnected", width: 2, height: 2) {
+		standardTile("apiStatus", "device.apiConnected", width: 1, height: 1) {
         	state "full", label: "API", backgroundColor: "#44b621", icon: "st.contact.contact.closed"
             state "warn", label: "API ", backgroundColor: "#FFFF33", icon: "st.contact.contact.open"
             state "lost", label: "API ", backgroundColor: "#ffa81e", icon: "st.contact.contact.open"
 		}
 
-		valueTile("temperature", "device.temperature", width: 2, height: 2, canChangeIcon: true, icon: "st.Home.home1") {
-			state("temperature", label:'${currentValue}°', unit:"F",
-				backgroundColors: getTempColors()
-			)
+		valueTile("temperature", "device.temperature", width: 2, height: 2, canChangeIcon: false, icon: "st.Home.home1") {
+			state("temperature", label:'${currentValue}°', unit:"F", backgroundColors: getTempColors())
 		}
         
+        // these are here just to get the colored icons to diplay in the Recently log in the Mobile App
+        valueTile("heatingSetpointColor", "device.heatingSetpoint", width: 2, height: 2, canChangeIcon: false, icon: "st.Home.home1") {
+			state("heatingSetpoint", label:'${currentValue}°', unit:"F", backgroundColor:"#ff9c14")
+		}
+        valueTile("coolingSetpointColor", "device.coolingSetpoint", width: 2, height: 2, canChangeIcon: false, icon: "st.Home.home1") {
+			state("coolingSetpoint", label:'${currentValue}°', unit:"F", backgroundColor:"#2db9e7")
+		}
+        valueTile("thermostatSetpointColor", "device.thermostatSetpoint", width: 2, height: 2, canChangeIcon: false, icon: "st.Home.home1") {
+			state("thermostatSetpoint", label:'${currentValue}°', unit:"F",	backgroundColors: getTempColors())
+		}
+        valueTile("weatherTempColor", "device.weatherTemperature", width: 2, height: 2, canChangeIcon: false, icon: "st.Home.home1") {
+			state("weatherTemperature", label:'${currentValue}°', unit:"F",	backgroundColors: getStockTempColors())		// use Fahrenheit scale so that outdoor temps register
+		}
+		
 		standardTile("mode", "device.thermostatMode", width: 2, height: 2, inactiveLabel: false, decoration: "flat") {
 			state "off", action:"thermostat.heat", label: "Set Mode", nextState: "updating", icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/systemmode_off.png"
 			state "heat", action:"thermostat.cool",  label: "Set Mode", nextState: "updating", icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/systemmode_heat.png"
@@ -256,7 +342,6 @@ metadata {
         	state "auto", action:"thermostat.fanOn", nextState: "auto", icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/fanmode_on_slider_off.png"
             state "on", icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/fanmode_on_slider_on.png"
         }
-
         
 		standardTile("upButtonControl", "device.thermostatSetpoint", width: 2, height: 1, inactiveLabel: false, decoration: "flat") {
 			state "setpoint", action:"raiseSetpoint", icon:"st.thermostat.thermostat-up"
@@ -271,22 +356,21 @@ metadata {
 		standardTile("downButtonControl", "device.thermostatSetpoint", height: 1, width: 2, inactiveLabel: false, decoration: "flat") {
 			state "setpoint", action:"lowerSetpoint", icon:"st.thermostat.thermostat-down"
 		}
-		controlTile("heatSliderControl", "device.heatingSetpoint", "slider", height: 1, width: 4, inactiveLabel: false, range:"(15..85)") {
-			state "setHeatingSetpoint", action:"thermostat.setHeatingSetpoint", backgroundColor:"#d04e00", unit: 'C'
+		controlTile("heatSliderControl", "device.heatingSetpoint", "slider", height: 1, width: 4, inactiveLabel: false, range: getSliderRange() /* "(15..85)" */ ) {
+			state "setHeatingSetpoint", action:"thermostat.setHeatingSetpoint", backgroundColor:"#ff9c14", unit: 'C'
 		}
 		valueTile("heatingSetpoint", "device.heatingSetpoint", height: 1, width: 2, inactiveLabel: false, decoration: "flat") {
-			state "heat", label:'${currentValue}°\nHeat', unit:"dF", backgroundColor:"#d04e00"
+			state "heat", label:'${currentValue}°\nHeat', unit:"dF", backgroundColor:"#ff9c14"
 		}
-		controlTile("coolSliderControl", "device.coolingSetpoint", "slider", height: 1, width: 4, inactiveLabel: false, range:"(15..85)") {
-			state "setCoolingSetpoint", action:"thermostat.setCoolingSetpoint", backgroundColor: "#1e9cbb", unit: 'C'
+		controlTile("coolSliderControl", "device.coolingSetpoint", "slider", height: 1, width: 4, inactiveLabel: false, range: getSliderRange() /* "(15..85)" */ ) {
+			state "setCoolingSetpoint", action:"thermostat.setCoolingSetpoint", backgroundColor:"#2db9e7", unit: 'C'
 		}
 		valueTile("coolingSetpoint", "device.coolingSetpoint", width: 2, height: 1, inactiveLabel: false, decoration: "flat") {
-			state "cool", label:'${currentValue}°\nCool', unit:"dF", backgroundColor: "#1e9cbb"
+			state "cool", label:'${currentValue}°\nCool', unit:"dF", backgroundColor:"#2db9e7"
 		}
 		standardTile("refresh", "device.thermostatMode", width: 2, height: 2,inactiveLabel: false, decoration: "flat") {
             state "default", action:"refresh.refresh", label: "Refresh", icon:"https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/header_ecobeeicon_blk.png"
 		}
-        
         
         standardTile("resumeProgram", "device.resumeProgram", width: 2, height: 2, inactiveLabel: false, decoration: "flat") {
 			state "resume", action:"resumeProgram", nextState: "updating", label:'Resume', icon:"https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/action_resume_program.png"
@@ -301,10 +385,12 @@ metadata {
             state "Auto Away", action:"noOp", label: 'Auto Away', icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/schedule_away_blue.png" // Fix to auto version
             state "Auto Home", action:"noOp", label: 'Auto Home', icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/schedule_home_blue.png" // Fix to auto
             state "Hold", action:"noOp", label: "Hold Activated", icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/schedule_generic_chair_blue.png"
+            state "Hold: Fan", action:"noOp", label: "Hold: Fan", icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/systemmode_fan.png"
             state "Hold: Home", action:"noOp", label: 'Hold: Home', icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/schedule_home_blue.png"
             state "Hold: Away", action:"noOp", label: 'Hold: Away',  icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/schedule_away_blue.png"
             state "Hold: Sleep", action:"noOp", label: 'Hold: Sleep',  icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/schedule_asleep_blue.png"
-            state "default:", action:"noOp", label: 'Other: ${currentValue}', icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/schedule_asleep_blue.png"
+      		state "Vacation", action: "noOp", label: 'Vacation', icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/schedule_vacation_airplane_yellow.png"
+      		state "default", action:"noOp", label: 'Other: ${currentValue}', icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/schedule_generic_chair_blue.png"
             
 		}        
         
@@ -324,7 +410,8 @@ metadata {
 
         standardTile("setSleep", "device.setSleep", width: 2, height: 2, inactiveLabel: false, decoration: "flat") {
 			// state "sleep", action:"sleep", nextState: "updating", label:'Set Sleep', icon:"st.Bedroom.bedroom2"
-            state "sleep", action:"sleep", nextState: "updating", label:'Sleep', icon:"https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/schedule_asleep_blue.png"
+			// can't call "sleep()" because of conflict with internal definition (it silently fails)
+            state "sleep", action:"night", nextState: "updating", label:'Sleep', icon:"https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/schedule_asleep_blue.png"
 			state "updating", label:"Working...", icon: "st.samsung.da.oven_ic_send"
 		}
 
@@ -337,76 +424,112 @@ metadata {
             // Issue reported that the label overlaps. Need to remove the icon
             state "default", label: '${currentValue}', icon: "st.nest.empty"
 		}
+			
+		standardTile("equipmentState", "device.equipmentOperatingState", width: 2, height: 2, inactiveLabel: false, decoration: "flat") {
+			state "idle", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/systemmode_idle_purple.png"
+            state "fan only", icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/operatingstate_fan.png"
+			state "emergency", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_heat_emergency.png"
+            state "heat pump", icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/operatingstate_heat.png"
+            state "heat 1", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_heat_1.png"
+			state "heat 2", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_heat_2.png"
+			state "heat 3", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_heat_3.png"
+			state "heat pump 2", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_heat_2.png"
+			state "heat pump 3", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_heat_3.png"
+			state "cool 1", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_cool_1.png"
+			state "cool 2", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_cool_2.png"
+			state "heating", icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/operatingstate_heat.png"
+			state "cooling", icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/operatingstate_cool.png"
+			state "emergency hum", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_heat_emergency+humid.png"
+            state "heat pump hum", icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/operatingstate_heat+humid.png"
+            state "heat 1 hum", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_heat_1+humid.png"
+			state "heat 2 hum", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_heat_2+humid.png"
+			state "heat 3 hum", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_heat_3+humid.png"
+			state "heat pump 2 hum", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_heat_2+humid.png"
+			state "heat pump 3 hum", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_heat_3+humid.png"
+			state "cool 1 hum", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_cool_1-humid.png"
+			state "cool 2 hum", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_cool_2-humid.png"
+			state "heating hum", icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/operatingstate_heat+humid.png"
+			state "cooling hum", icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/operatingstate_cool-humid.png"
+            state "humidifier", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_humidifier_only.png"
+            state "dehumidifier", icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/operatingstate_dehumidifier_only.png"
+            // Issue reported that the label overlaps. Need to remove the icon
+            state "default", action:"noOp", label: '${currentValue}', icon: "st.nest.empty"
+		}
 
         valueTile("humidity", "device.humidity", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
-			state "default", label: 'Humidity\n${currentValue}%', unit: "humidity" // Add a blue background signifying water?
+			state("default", label: '${currentValue}%', unit: "humidity", backgroundColor:"#d28de0")
 		}
         
         standardTile("motionState", "device.motion", width: 2, height: 2, inactiveLabel: false, decoration: "flat") {
 			state "active", action:"noOp", nextState: "active", label:"Motion", icon:"https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/motion_sensor_motion.png"
 			state "inactive", action: "noOp", nextState: "inactive", label:"No Motion", icon:"https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/motion_sensor_nomotion.png"
             state "not supported", action: "noOp", nextState: "not supported", label: "N/A", icon:"https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/notsupported_x.png"
+			state "unkown", action: "noOp", label:"Offline", nextState: "unkown", icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/motion_sensor_noconnection.png"
 		}
 
         // Weather Tiles and other Forecast related tiles
 		standardTile("weatherIcon", "device.weatherSymbol", inactiveLabel: false, width: 2, height: 2, decoration: "flat") {
-			state "-2",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_updating_-2.png" // label: 'updating...',	
-			state "0",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_sunny_00.png" // label: 'Sunny',			
-			state "1",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_mostlysunny_01.png" // label: 'Few Clouds',	
-			state "2",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_partly_cloudy_02.png"
-			state "3",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_mostly_cloudy_03.png"
-			state "4",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_cloudy_04.png"
-			state "5",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_drizzle_05.png"
-			state "6",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_rain_06.png"
-			state "7",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_freezing_rain_07.png"
-			state "8",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_rain_06.png"
-			state "9",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_freezing_rain_07.png"
-			state "10",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_snow_10.png"
-			state "11",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_flurries_11.png"
-			state "12",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_freezing_rain_07.png"
-			state "13",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_snow_10.png"
-			state "14",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_freezing_rain_07.png"
-			state "15",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_thunderstorms_15.png"
+			state "-2",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_updating_-2_fc.png" // label: 'updating...',	
+			state "0",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_sunny_00_fc.png" // label: 'Sunny',			
+			state "1",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_partly_cloudy_02_fc.png" // label: 'Few Clouds',	
+			state "2",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_partly_cloudy_02_fc.png"
+			state "3",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_mostly_cloudy_03_fc.png"
+			state "4",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons//weather_cloudy_04_fc.png"
+			state "5",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_drizzle_05_fc.png"
+			state "6",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_rain_06_fc.png"
+			state "7",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_freezing_rain_07_fc.png"
+			state "8",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_rain_06_fc.png"
+			state "9",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_freezing_rain_07_fc.png"
+			state "10",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_snow_10_fc.png"
+			state "11",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_flurries_11_fc.png"
+			state "12",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_freezing_rain_07_fc.png"
+			state "13",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons//weather_snow_10_fc.png"
+			state "14",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_freezing_rain_07_fc.png"
+			state "15",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_thunderstorms_15_fc.png"
 			state "16",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_windy_16.png"
 			state "17",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_tornado_17.png"
-			state "18",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_fog_18.png"
-			state "19",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_fog_18.png" // Hazy
-			state "20",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_fog_18.png" // Smoke
-			state "21",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_fog_18.png" // Dust
+			state "18",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_fog_18_fc.png"
+			state "19",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_fog_18_fc.png" // Hazy
+			state "20",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_fog_18_fc.png" // Smoke
+			state "21",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_fog_18_fc.png" // Dust
             
             // Night Time Icons (Day time Value + 100)
-			state "100",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_clear_night_100.png" // label: 'Sunny',			
-			state "101",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_night_partly_cloudy_101.png" // label: 'Few Clouds',	
-			state "102",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_night_partly_cloudy_101.png"
-			state "103",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_night_mostly_cloudy_103.png"
-			state "104",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_cloudy_04.png"
-			state "105",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_night_drizzle_105.png"
-			state "106",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_night_rain_106.png"
-			state "107",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_night_freezing_rain_107.png"
-			state "108",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_night_rain_106.png"
-			state "109",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_night_freezing_rain_107.png"
-			state "110",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_night_snow_110.png"
-			state "111",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_night_flurries_111.png"
-			state "112",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_night_freezing_rain_107.png"
-			state "113",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_night_snow_110.png"
-			state "114",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_night_freezing_rain_107.png"
-			state "115",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_night_thunderstorms_115.png"
+			state "100",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_clear_night_100_fc.png" // label: 'Sunny',			
+			state "101",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_night_partly_cloudy_101_fc.png" // label: 'Few Clouds',	
+			state "102",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_night_partly_cloudy_101_fc.png"
+			state "103",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_night_mostly_cloudy_103_fc.png"
+			state "104",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_cloudy_04_fc.png"
+			state "105",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_night_drizzle_105_fc.png"
+			state "106",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_night_rain_106_fc.png"
+			state "107",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_night_freezing_rain_107_fc.png"
+			state "108",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_night_rain_106_fc.png"
+			state "109",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_night_freezing_rain_107_fc.png"
+			state "110",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons//weather_night_snow_110_fc.png"
+			state "111",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_night_flurries_111_fc.png"
+			state "112",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_night_freezing_rain_107_fc.png"
+			state "113",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_night_snow_110_fc.png"
+			state "114",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_night_freezing_rain_107_fc.png"
+			state "115",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_night_thunderstorms_115_fc.png"
 			state "116",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_windy_16.png"
 			state "117",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_tornado_17.png"
-			state "118",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_fog_18.png"
-			state "119",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_fog_18.png" // Hazy
-			state "120",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_fog_18.png" // Smoke
-			state "121",			icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/weather_fog_18.png" // Dust
+			state "118",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_fog_18_fc.png"
+			state "119",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_fog_18_fc.png" // Hazy
+			state "120",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_fog_18_fc.png" // Smoke
+			state "121",			icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/weather_fog_18_fc.png" // Dust
 		}
         standardTile("weatherTemperature", "device.weatherTemperature", width: 2, height: 2, decoration: "flat") {
-			state "default", action: "noOp", nextState: "default", label: 'Out: ${currentValue}°', icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/thermometer.png"
+			state "default", action: "noOp", nextState: "default", label: 'Out: ${currentValue}°', icon: "https://raw.githubusercontent.com/SANdood/Ecobee/master/icons/thermometer_fc.png"
 		}
         
-        valueTile("lastPoll", "device.lastPoll", height: 2, width: 4, decoration: "flat") {
-			state "thermostatStatus", label:'Last Poll:\n${currentValue}', backgroundColor:"#ffffff"
+        valueTile("lastPoll", "device.lastPoll", height: 1, width: 5, decoration: "flat") {
+			state "thermostatStatus", label:'Last Poll: ${currentValue}', backgroundColor:"#ffffff"
 		}
         
-        standardTile("ecoLogo", "device.logo", inactiveLabel: false, width: 2, height: 2) {
+		valueTile("holdStatus", "device.holdStatus", height: 1, width: 5, decoration: "flat") {
+			state "default", label:'${currentValue}' //, backgroundColor:"#000000", foregroudColor: "#ffffff"
+		}
+		
+        standardTile("ecoLogo", "device.logo", inactiveLabel: false, width: 1, height: 1) {
 			state "default",  icon:"https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/header_ecobeeicon_blk.png"			
 		}
 
@@ -414,24 +537,27 @@ metadata {
         	state "default"
         }
         
+        valueTile("fanMinOnTime", "device.fanMinOnTime", width: 1, height: 1, decoration: "flat") {
+        	state "fanMinOnTime", /*"default",  action: "noOp", nextState: "default", */ label: 'Fan On\n${currentValue}m/hr'
+        }
         standardTile("commandDivider", "device.logo", inactiveLabel: false, width: 4, height: 1, decoration: "flat") {
         	state "default", icon:"https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/command_divider.png"			
         }        
     
-		main(["temperature", "tempSummary"])
+		main(["temperature", "temperatureDisplay"])
 		details([
         	// Use this if you are on a fully operational device OS (such as iOS or Android)
-        	"tempSummary",
+        	"temperatureDisplay",
             // Use the lines below if you can't (or don't want to) use the multiAttributeTile version
             // To use, uncomment these lines below, and comment out the line above
             // "temperature", "humidity",  "upButtonControl", "thermostatSetpoint", 
             // "currentStatus", "downButtonControl",
             
-        	"operatingState", "weatherIcon", "refresh", 
+        	/* "operatingState", */  "equipmentState", "weatherIcon",  "refresh",  
             "currentProgramIcon", "weatherTemperature", "motionState", 
-            "modeShow", "fanModeLabeled", "resumeProgram",
-            
+            "holdStatus", "fanMinOnTime", 
             "oneBuffer", "commandDivider", "oneBuffer",
+            "modeShow", "fanModeLabeled",  "resumeProgram", 
             "coolSliderControl", "coolingSetpoint",
             "heatSliderControl", "heatingSetpoint",            
             "fanMode", "fanModeAutoSlider", "fanModeOnSlider", 
@@ -444,23 +570,22 @@ metadata {
 	}
 
 	preferences {
-    	section () {
+    	section (title: "${getVersionLabel()}") {
 			input "holdType", "enum", title: "Hold Type", description: "When changing temperature, use Temporary or Permanent hold (default)", required: false, options:["Temporary", "Permanent"]
         	// TODO: Add a preference for the background color for "idle"
         	// TODO: Allow for a "smart" Setpoint change in "Auto" mode. Why won't the paragraph show up in the Edit Device screen?
-        	paragraph "The Smart Auto Temp Adjust flag allows for the temperature to be adjusted manually even when the thermostat is in Auto mode. An attempt to determine if the heat or cool setting should be changed will be made automatically."
-            input "smartAuto", "bool", title: "Smart Auto Temp Adjust", description: true, required: false
+        	// paragraph "The Smart Auto Temp Adjust flag allows for the temperature to be adjusted manually even when the thermostat is in Auto mode. An attempt to determine if the heat or cool setting should be changed will be made automatically."
+            input "smartAuto", "bool", title: "Smart Auto Temp Adjust", description: "This flag allows the temperature to be adjusted manually when the thermostat " +
+					"is in Auto mode. An attempt to determine if the heat or cool setting should be changed is made automatically.", required: false
             // input "detailedTracing", "bool", title: "Enable Detailed Tracing", description: true, required: false
        }
 	}
-
 }
 
 // parse events into attributes
 def parse(String description) {
 	LOG( "parse() --> Parsing '${description}'" )
 	// Not needed for cloud connected devices
-
 }
 
 def refresh() {
@@ -470,52 +595,160 @@ def refresh() {
 
 void poll() {
 	LOG("Executing 'poll' using parent SmartApp")
-    parent.pollChildren(this)
+    parent.pollChildren(this) //parent will poll ALL the thermostats 
 }
-
 
 def generateEvent(Map results) {
 	LOG("generateEvent(): parsing data $results", 4)
     LOG("Debug level of parent: ${parent.settings?.debugLevel}", 4, null, "debug")
 	def linkText = getLinkText(device)
+    def isMetric = wantMetric()
 
+	def updateTempRanges = false
+    def precision = device.currentValue('decimalPrecision')
+    if (!precision) precision = isMetric ? 1 : 0
+	
 	if(results) {
 		results.each { name, value ->
 			LOG("generateEvent() - In each loop: name: ${name}  value: ${value}", 4)
-			def isChange = false
 			def isDisplayed = true
-			def event = [name: name, linkText: linkText, descriptionText: getThermostatDescriptionText(name, value, linkText), handlerName: name]
-
-			if (name=="temperature" || name=="heatingSetpoint" || name=="coolingSetpoint" || name=="weatherTemperature" ) {
-				def sendValue = value // ? convertTemperatureIfNeeded(value.toDouble(), "F", 1): value //API return temperature value in F
-                LOG("generateEvent(): Temperature value: ${sendValue}", 5, this, "trace")
-				isChange = isTemperatureStateChange(device, name, value.toString())
-				isDisplayed = isChange
-				event << [value: sendValue, isStateChange: isChange, displayed: isDisplayed]
-			} else if (name=="heatMode" || name=="coolMode" || name=="autoMode" || name=="auxHeatMode") {
-				isChange = isStateChange(device, name, value.toString())
-				event << [value: value.toString(), isStateChange: isChange, displayed: false]
-			} else if (name=="thermostatOperatingState") {
-            	generateOperatingStateEvent(value.toString())
-                return
-            } else if (name=="apiConnected") {
-            	// Treat as if always changed to ensure an updated value is shown on mobile device and in feed
-                isChange = isStateChange(device,name,value.toString());
-                isDisplayed = isChange
-                event << [value: value.toString(), isStateChange: isChange, displayed: isDisplayed]
-            } else if (name=="weatherSymbol" && device.currentValue("timeOfDay") == "night") {
-            	// Check to see if it is night time, if so change to a night symbol
-                def symbolNum = value.toInteger() + 100
-                isChange = isStateChange(device, name, symbolNum.toString())
-                isDisplayed = isChange
-				event << [value: symbolNum.toString(), isStateChange: isChange, displayed: isDisplayed]            
-            } else {
-				isChange = isStateChange(device, name, value.toString())
-				isDisplayed = isChange
-				event << [value: value.toString(), isStateChange: isChange, displayed: isDisplayed]
+            String tempDisplay = ""
+			def eventFront = [name: name, linkText: linkText, handlerName: name]
+			def event = [:]
+			def isChange = isStateChange(device, name, value.toString())
+			
+			switch (name) {
+				case 'temperature':
+				case 'heatingSetpoint':
+				case 'coolingSetpoint':
+				case 'weatherTemperature':
+                    String sendValue = "${value}"		// Already rounded to appropriate user precision (except temperature, which is sent in API precision)
+                    if (isChange) event = eventFront + [value: sendValue,  descriptionText: getTemperatureDescriptionText(name, value, linkText), isStateChange: true, displayed: true]
+					if (name=="temperature") {
+						// Generate the display value that will preserve decimal positions ending in 0
+                    	if (precision == 0) {
+                    		tempDisplay = value.toDouble().round(0).toString() + '°'
+                    	} else {
+							tempDisplay = String.format( "%.${precision.toInteger()}f", value.toDouble().round(precision.toInteger())) + '°'
+                    	}
+					} 
+					break;
+				
+				case 'thermostatOperatingState':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Thermostat is ${value}", isStateChange: true, displayed: false]
+                	break;
+				
+				case 'equipmentOperatingState':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Equipment is ${value}", isStateChange: true, displayed: true]
+					break;
+				
+				case 'equipmentStatus':
+				  	String descText = (value == 'idle') ? 'Equipment is idle' : "Equipment: ${value} running"
+					if (isChange) event = eventFront +  [value: "${value}", descriptionText: descText, isStateChange: true, displayed: false]
+					break;
+				
+           		case 'lastPoll':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Poll: ${value}", isStateChange: true, displayed: true]
+					break;
+				
+				case 'humidity':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Humidity is ${value}% (${device.currentValue('humiditySetpoint')}%)", isStateChange: true, displayed: true]
+            		break;
+				
+				case 'humiditySetpoint':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Humidity setpoint is ${value}%", isStateChange: true, displayed: true]
+		            break;
+				
+				case 'currentProgramName':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Program is ${value}%", isStateChange: true, displayed: true]
+					break;
+				
+				case 'apiConnected':
+                	if (isChange) event = eventFront + [value: "${value}", descriptionText: "API Connection is ${value}", isStateChange: true, displayed: true]
+					break;
+				
+				case 'weatherSymbol':
+					// Check to see if it is night time, if so change to a night symbol
+					def symbolNum = value.toInteger()
+					if (device.currentValue('timeOfDay') == 'night') {
+						symbolNum = value.toInteger() + 100
+						isChange = isStateChange(device, name, symbolNum.toString())
+					}
+					if (isChange) event = eventFront + [value: "${symbolNum}", descriptionText: "Weather Symbol is ${symbolNum}", isStateChange: true, displayed: true]
+					break;
+				
+				case 'thermostatHold':
+					String descText = (value == "") ? 'Hold finished' : (value == 'hold') ? "Hold: ${device.currentValue('currentProgram')} (${device.currentValue('scheduledProgram')})" : "Hold for ${value}"
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: descText, isStateChange: true, displayed: true]
+					break;
+				
+				case 'holdStatus': 
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "${value}", isStateChange: true, displayed: true]
+					break;
+				
+				case 'fanMinOnTime':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Fan On ${value} minutes per hour", isStateChange: true, displayed: true]
+					break;
+				
+				case 'thermostatMode':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Mode is ${value}", isStateChange: true, displayed: true]
+		            break;
+				
+        		case 'thermostatFanMode':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Fan Mode is ${value}", isStateChange: true, displayed: true]
+            		break;
+				
+				case 'debugEventFromParent':
+					event = eventFront + [value: "${value}", descriptionText: "-> ${value}", isStateChange: true, displayed: true]
+					break;
+				
+				// These are ones we don't need to display or provide descriptionText for (mostly internal or debug use)
+				case 'debugLevel':
+				case 'heatRangeLow':
+				case 'heatRangeHigh':
+				case 'coolRangeLow':
+				case 'coolRangeHigh':
+				case 'heatRange':
+				case 'coolRange':
+				case 'decimalPrecision':
+				case 'timeOfDay':
+				case 'heatMode':
+				case 'coolMode':
+				case 'autoMode':
+				case 'auxHeatMode':
+				case 'currentProgramId':
+				case 'currentProgram':
+				case 'scheduledProgramName':
+				case 'scheduledProgramId':
+				case 'scheduledProgram':
+				case 'heatStages':
+				case 'coolStages':
+				case 'hasHeatPump':
+				case 'hasForcedAir':
+				case 'hasElectric':
+				case 'hasBoiler':
+				case 'auxHeatMode':
+				case 'heatDifferential':
+				case 'coolDifferential':
+                case 'programsList':
+                case 'holdEndsAt':
+					if (isChange) event = eventFront +  [value: "${value}", isStateChange: true, displayed: false]
+					break;
+				
+				// everything else just gets displayed with generic text
+				default:
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "${name} is ${value}", isStateChange: true, displayed: true]			
+					break;
 			}
-			LOG("Out of loop, calling sendevent(${event})", 5)
-			sendEvent(event)
+			if (event != [:]) {
+				LOG("generateEvent() - Out of switch{}, calling sendevent(${event})", 5)
+				sendEvent(event)
+			}
+            if (tempDisplay != "") {
+        		event = [ name: 'temperatureDisplay', value: tempDisplay, linkText: linkText, descriptionText:"Temperature Display is ${tempDisplay}", displayed: false ]
+        		sendEvent(event)
+            	LOG("generateEvent() - Temperature updated, calling sendevent(${event})", 5)
+        	}
 		}
 		generateSetpointEvent()
 		generateStatusEvent()
@@ -523,24 +756,20 @@ def generateEvent(Map results) {
 }
 
 //return descriptionText to be shown on mobile activity feed
-private getThermostatDescriptionText(name, value, linkText) {
-	if(name == "temperature") {
-		return "$linkText temperature is ${value}°"
-
-	} else if(name == "heatingSetpoint") {
-		return "heating setpoint is ${value}°"
-
-	} else if(name == "coolingSetpoint"){
-		return "cooling setpoint is ${value}°"
-
-	} else if (name == "thermostatMode") {
-		return "thermostat mode is ${value}"
-
-	} else if (name == "thermostatFanMode") {
-		return "thermostat fan mode is ${value}"
-
-	} else {
-		return "${name} = ${value}"
+private getTemperatureDescriptionText(name, value, linkText) {
+	switch (name) {
+		case 'temperature':
+			return "Temperature is ${value}°"
+            break;
+		case 'heatingSetpoint':
+			return "Heating setpoint is ${value}°"
+            break;
+        case 'coolingSetpoint':
+			return "Cooling setpoint is ${value}°"
+            break;
+        case 'weatherTemperature':
+        	return "Outside temperature is ${value}°"
+            break;
 	}
 }
 
@@ -568,7 +797,6 @@ def setTemperature(setpoint) {
     	deltaTemp = ( (setpoint - currentTemp) < 0) ? -1 : 1
     }
     
-
     LOG("deltaTemp = ${deltaTemp}")
 
     if (mode == "auto") {
@@ -629,22 +857,25 @@ void setHeatingSetpoint(Double setpoint) {
 	def coolingSetpoint = device.currentValue("coolingSetpoint").toDouble()
 	def deviceId = getDeviceId()
 
-
 	LOG("setHeatingSetpoint() before compare: heatingSetpoint == ${heatingSetpoint}   coolingSetpoint == ${coolingSetpoint}", 4)
 	//enforce limits of heatingSetpoint vs coolingSetpoint
+	def low = device.currentValue("heatRangeLow")
+	def high = device.currentValue("heatRangeHigh")
+	
+	if (heatingSetpoint < low ) { heatingSetpoint = low }
+	if (heatingSetpoint > high) { heatingSetpoint = high}
 	if (heatingSetpoint > coolingSetpoint) {
 		coolingSetpoint = heatingSetpoint
 	}
 
-	LOG("Sending setHeatingSetpoint> coolingSetpoint: ${coolingSetpoint}, heatingSetpoint: ${heatingSetpoint}", 4)
-
+	LOG("Sending setHeatingSetpoint> coolingSetpoint: ${coolingSetpoint}, heatingSetpoint: ${heatingSetpoint}")
 
 	def sendHoldType = whatHoldType()
 
 	if (parent.setHold(this, heatingSetpoint,  coolingSetpoint, deviceId, sendHoldType)) {
-		sendEvent("name":"heatingSetpoint", "value": wantMetric() ? heatingSetpoint : heatingSetpoint.round(0).toInteger() )
-		sendEvent("name":"coolingSetpoint", "value": wantMetric() ? coolingSetpoint : coolingSetpoint.round(0).toInteger() )
-		LOG("Done setHeatingSetpoint> coolingSetpoint: ${coolingSetpoint}, heatingSetpoint: ${heatingSetpoint}", 4)
+		sendEvent("name":"heatingSetpoint", "value": wantMetric() ? heatingSetpoint : heatingSetpoint.toDouble().round(0).toInteger() )
+		sendEvent("name":"coolingSetpoint", "value": wantMetric() ? coolingSetpoint : coolingSetpoint.toDouble().round(0).toInteger() )
+		LOG("Done setHeatingSetpoint> coolingSetpoint: ${coolingSetpoint}, heatingSetpoint: ${heatingSetpoint}")
 		generateSetpointEvent()
 		generateStatusEvent()
 	} else {
@@ -670,6 +901,11 @@ void setCoolingSetpoint(Double setpoint) {
 	LOG("setCoolingSetpoint() before compare: heatingSetpoint == ${heatingSetpoint}   coolingSetpoint == ${coolingSetpoint}")
 
 	//enforce limits of heatingSetpoint vs coolingSetpoint
+	def low = device.currentValue("coolRangeLow")
+	def high = device.currentValue("coolRangeHigh")
+	
+	if (coolingSetpoint < low ) { coolingSetpoint = low }
+	if (coolingSetpoint > high) { coolingSetpoint = high}
 	if (heatingSetpoint > coolingSetpoint) {
 		heatingSetpoint = coolingSetpoint
 	}
@@ -680,8 +916,8 @@ void setCoolingSetpoint(Double setpoint) {
 
     // Convert temp to F from C if needed
 	if (parent.setHold(this, heatingSetpoint,  coolingSetpoint, deviceId, sendHoldType)) {
-		sendEvent("name":"heatingSetpoint", "value": wantMetric() ? heatingSetpoint : heatingSetpoint.round(0).toInteger() )
-		sendEvent("name":"coolingSetpoint", "value": wantMetric() ? coolingSetpoint : coolingSetpoint.round(0).toInteger() )
+		sendEvent("name":"heatingSetpoint", "value": wantMetric() ? heatingSetpoint : heatingSetpoint.toDouble().round(0).toInteger() )
+		sendEvent("name":"coolingSetpoint", "value": wantMetric() ? coolingSetpoint : coolingSetpoint.toDouble().round(0).toInteger() )
 		LOG("Done setCoolingSetpoint>> coolingSetpoint = ${coolingSetpoint}, heatingSetpoint = ${heatingSetpoint}", 4)
 		generateSetpointEvent()
 		generateStatusEvent()
@@ -690,19 +926,29 @@ void setCoolingSetpoint(Double setpoint) {
 	}
 }
 
-void resumeProgram() {
+void resumeProgram(resumeAll=true) {
 	// TODO: Put a check in place to see if we are already running the program. If there is nothing to resume, then save the calls upstream
-	LOG("resumeProgram() is called", 5)
+	def thermostatHold = device.currentValue("thermostatHold")
+	if (thermostatHold == "") {
+		LOG("resumeProgram() but no current hold", 3)
+		return
+	} else if (thermostatHold == "vacation") {
+		LOG("resumeProgram() - cannot resume from ${thermostatHold} hold", 3, null, "error")
+		return
+	} else {
+		LOG("resumeProgram() is called, hold type is ${thermostatHold}", 4)
+	}
+	
 	sendEvent("name":"thermostatStatus", "value":"Resuming schedule...", "description":statusText, displayed: false)
 	def deviceId = getDeviceId()
-	if (parent.resumeProgram(this, deviceId)) {
+	if (parent.resumeProgram(this, deviceId, resumeAll)) {
 		sendEvent("name":"thermostatStatus", "value":"Setpoint updating...", "description":statusText, displayed: false)
 		runIn(15, "poll")
 		LOG("resumeProgram() is done", 5)
 		sendEvent("name":"resumeProgram", "value":"resume", descriptionText: "resumeProgram is done", displayed: false, isStateChange: true)
 	} else {
-		sendEvent("name":"thermostatStatus", "value":"failed resume click refresh", "description":statusText, displayed: false)
-		LOG("Error resumeProgram() check parent.resumeProgram(this, deviceId)", 2, null, "error")
+		sendEvent("name":"thermostatStatus", "value":"failed resume, click refresh", "description":statusText, displayed: false)
+		LOG("Error resumeProgram() check parent.resumeProgram(this, ${deviceId}, ${resumeAll})", 2, null, "error")
 	}
 
 	generateSetpointEvent()
@@ -710,24 +956,10 @@ void resumeProgram() {
 }
 
 /*
-def modes() {
-	if (state.modes) {
-		LOG("Modes = ${state.modes}", 5)
-		return state.modes
-	}
-	else {
-		state.modes = parent.availableModes(this)
-		LOG("Modes = ${state.modes}", 5)
-		return state.modes
-	}
-}
-
 def fanModes() {
 	["off", "on", "auto", "circulate"]
 }
 */
-
-
 
 def generateQuickEvent(name, value) {
 	generateQuickEvent(name, value, 0)
@@ -738,90 +970,95 @@ def generateQuickEvent(name, value, pollIn) {
     if (pollIn > 0) { runIn(pollIn, "poll") }
 }
 
-def generateFanModeEvent(fanMode) {
-	sendEvent(name: "thermostatFanMode", value: fanMode, descriptionText: "$device.displayName fan is in ${mode} mode", displayed: true)
-}
-
-def generateOperatingStateEvent(operatingState) {
-	LOG("generateOperatingStateEvent with state: ${operatingState}", 4)
-	sendEvent(name: "thermostatOperatingState", value: operatingState, descriptionText: "$device.displayName is ${operatingState}", displayed: true)
-}
-
-
-def setThermostatMode(String value) {
+void setThermostatMode(String value) {
 	// 	"emergencyHeat" "heat" "cool" "off" "auto"
     
     if (value=="emergency" || value=="emergencyHeat") { value = "auxHeatOnly" }    
 	LOG("setThermostatMode(${value})", 5)
 	generateQuickEvent("thermostatMode", value)
 
-
     def deviceId = getDeviceId()
 	if (parent.setMode(this, value, deviceId)) {
 		// generateQuickEvent("thermostatMode", value, 15)
 	} else {
 		LOG("Error setting new mode to ${value}.", 1, null, "error")
-		def currentMode = device.currentState("thermostatMode")?.value
+		def currentMode = device.currentValue("thermostatMode")
 		generateQuickEvent("thermostatMode", currentMode) // reset the tile back
 	}
 	generateSetpointEvent()
 	generateStatusEvent()
 }
 
-
-def off() {
+void off() {
 	LOG("off()", 5)
     setThermostatMode("off")    
 }
 
-def heat() {
+void heat() {
 	LOG("heat()", 5)
     setThermostatMode("heat")    
 }
 
-def auxHeatOnly() {
+void auxHeatOnly() {
 	LOG("auxHeatOnly()", 5)
     setThermostatMode("auxHeatOnly")
 }
 
-def emergency() {
-	auxHeatOnly()
+void emergency() {
+	LOG("emergency()", 5)
+    setThermostatMode("auxHeatOnly")
 }
 
 // This is the proper definition for the capability
-def emergencyHeat() {
-	auxHeatOnly()
+void emergencyHeat() {
+	LOG("emergencyHeat()", 5)
+    setThermostatMode("auxHeatOnly")
 }
 
-def cool() {
+void cool() {
 	LOG("cool()", 5)
     setThermostatMode("cool")    
 }
 
-def auto() {
+void auto() {
 	LOG("auto()", 5)
     setThermostatMode("auto")    
 }
 
-
 // Handle Comfort Settings
-def setThermostatProgram(program, holdType=null) {
-	// Change the Comfort Setting to Home
-    LOG("setThermostatProgram: program: ${program}  holdType: ${holdType}", 4)
+void setThermostatProgram(program, holdType=null) {
+	// Change the Comfort Setting (aka Climate)
+    def programsList = []
+    programsList = new JsonSlurper().parseText(device.currentValue('programsList'))
+    if (!programsList.contains(program)) {
+    	LOG("setThermostatProgram(${program}) - invalid argument",2,this,'warn')
+        return
+    }
+    LOG("setThermostatProgram() program: ${program} holdType: ${holdType}", 4)
 	def deviceId = getDeviceId()    
 
 	LOG("Before calling parent.setProgram()", 5)
 	
     def sendHoldType = holdType ?: whatHoldType()
-    
+    poll()		// need to know if scheduled program changed recently
+	
+	// if the requested program is the same as the one that is supposed to be running, then just resumeProgram
+	// but only if this is NOT a permanent hold request
+	if (sendHoldType == 'nextTransition') {
+		if (device.currentValue("scheduledProgram") == program) {
+			LOG("setThermostatProgram() - resuming scheduled program ${program}", 3, this, 'info')
+			resumeProgram(true)	// resumeAll so that we get back to scheduled program
+			return
+		}
+	}
   
     if ( parent.setProgram(this, program, deviceId, sendHoldType) ) {
+    	log.debug "Success setting program to ${program}!"
 		generateProgramEvent(program)
-        runIn(15, "poll")        
 	} else {
-    	LOG("Error setting new comfort setting ${program}.", 2, null, "warn")
-		def currentProgram = device.currentState("currentProgramId")?.value
-		generateProgramEvent(currentProgram, program) // reset the tile back
+    	LOG("Error setting new comfort setting ${program}.", 2, this, "warn")
+		def priorProgram = device.currentState("currentProgramId")?.value
+		generateProgramEvent(priorProgram, program) // reset the tile back
 	}
  
  	LOG("After calling parent.setProgram()", 5)
@@ -830,23 +1067,39 @@ def setThermostatProgram(program, holdType=null) {
 	generateStatusEvent()    
 }
 
-
-
-def home() {
+void home() {
 	// Change the Comfort Setting to Home
     LOG("home()", 5)
     setThermostatProgram("Home")
 }
 
-def away() {
+void present(){
+	// Change the Comfort Setting to Home (Nest compatibility)
+    LOG("present()", 5)
+    setThermostatProgram("Home")
+}
+void away() {
 	// Change the Comfort Setting to Away
     LOG("away()", 5)
     setThermostatProgram("Away")
 }
 
-def sleep() {
+// Unfortunately, we can't overload the internal Java/Groovy/system definition of 'sleep()'
+/*def sleep() {
 	// Change the Comfort Setting to Sleep    
     LOG("sleep()", 5)
+    setThermostatProgram("Sleep")
+}
+*/
+void asleep() {
+	// Change the Comfort Setting to Sleep    
+    LOG("asleep()", 5)
+    setThermostatProgram("Sleep")
+}
+
+void night() {
+	// Change the Comfort Setting to Sleep    
+    LOG("night()", 5)
     setThermostatProgram("Sleep")
 }
 
@@ -854,7 +1107,7 @@ def generateProgramEvent(program, failedProgram=null) {
 	LOG("Generate generateProgramEvent Event: program ${program}", 4)
 
 	sendEvent("name":"thermostatStatus", "value":"Setpoint updating...", "description":statusText, displayed: false)
-	sendEvent("name":"currentProgramName", "value":program.capitalize())
+	sendEvent("name":"currentProgramName", "value":"Hold: "+program.capitalize())
     sendEvent("name":"currentProgramId", "value":program)
     
     def tileName = ""
@@ -866,7 +1119,6 @@ def generateProgramEvent(program, failedProgram=null) {
     }
     sendEvent("name":"${tileName}", "value":"${program}", descriptionText: "${tileName} is done", displayed: false, isStateChange: true)
 }
-
 
 def setThermostatFanMode(value, holdType=null) {
 	LOG("setThermostatFanMode(${value})", 4)
@@ -900,7 +1152,6 @@ def setThermostatFanMode(value, holdType=null) {
 def fanOn() {
 	LOG("fanOn()", 5)
     setThermostatFanMode("on")
-
 }
 
 def fanAuto() {
@@ -918,6 +1169,38 @@ def fanOff() {
 	setThermostatFanMode("off")
 }
 
+void setFanMinOnTime(minutes) {
+	LOG("setFanMinOnTime(${minutes})", 5, null, "trace")
+    def deviceId = getDeviceId()
+    
+	def howLong = 10	// default to 10 minutes, if no value supplied
+	if (minutes.isNumber()) howLong = minutes
+    if ((howLong >=0) && (howLong <=  55)) {
+		parent.setFanMinOnTime(this, deviceId, howLong)
+    } else {
+    	LOG("setFanMinOnTime(${minutes}) - invalid argument",5,null, "error")
+    }
+}
+
+void setVacationFanMinOnTime(minutes) {
+	LOG("setVacationFanMinOnTime(${minutes})", 5, null, "trace")
+    def deviceId = getDeviceId()
+    
+	def howLong = 0		// default to 0 minutes during Vacations, if no value supplied
+	if (minutes.isNumber()) howLong = minutes
+    if ((howLong >=0) && (howLong <=  55)) {
+		parent.setVacationFanMinOnTime(this, deviceId, howLong)
+    } else {
+    	LOG("setVacationFanMinOnTime(${minutes}) - invalid argument",5,null, "error")
+    }
+}
+
+void deleteVacation(vacationName = null) {
+	LOG("deleteVacation(${vacationName})", 5, null, "trace")
+    def deviceId = getDeviceId()
+    parent.deleteVacation(this, deviceId, vacationName)
+}
+
 def generateSetpointEvent() {
 	LOG("Generate SetPoint Event", 5, null, "trace")
 
@@ -929,23 +1212,30 @@ def generateSetpointEvent() {
 	LOG("Heating Setpoint = ${heatingSetpoint}", 4, null, "debug")
 	LOG("Cooling Setpoint = ${coolingSetpoint}", 4, null, "debug")
 
-	if (mode == "heat") {
-		sendEvent("name":"thermostatSetpoint", "value":heatingSetpoint.toString())
+	switch (mode) {
+		case 'heat':
+		case 'emergencyHeat':
+			sendEvent(name:'thermostatSetpoint', value: "${heatingSetpoint}")
+			break;
+		
+		case 'cool':
+			sendEvent(name:'thermostatSetpoint', value: "${coolingSetpoint}")
+			break;
+		
+		case 'auto':
+			if (!usingSmartAuto()) {
+				// No Smart Auto, just regular auto
+				sendEvent(name:'thermostatSetpoint', value:"Auto (${heatingSetpoint}-${coolingSetpoint})")
+			} else {
+		    	// Smart Auto Enabled
+				sendEvent(name:'thermostatSetpoint', value: "${device.currentValue('temperature')}")
+			}
+			break;
+		
+		case 'off':
+			sendEvent(name:'thermostatSetpoint', value:'Off')
+			break;
 	}
-	else if (mode == "cool") {
-		sendEvent("name":"thermostatSetpoint", "value":coolingSetpoint.toString())
-	} else if (mode == "auto" && !usingSmartAuto() ) {
-		// No Smart Auto, just regular auto
-		sendEvent("name":"thermostatSetpoint", "value":"Auto")
-	} else if (mode == "auto" && usingSmartAuto() ) {
-    	// Smart Auto Enabled
-        sendEvent("name":"thermostatSetpoint", "value":device.currentValue("temperature").toString())
-    } else if (mode == "off") {
-		sendEvent("name":"thermostatSetpoint", "value":"Off")
-	} else if (mode == "emergencyHeat") {
-		sendEvent("name":"thermostatSetpoint", "value":heatingSetpoint.toString())
-	}
-
 }
 
 void raiseSetpoint() {
@@ -957,9 +1247,24 @@ void raiseSetpoint() {
         return
 	}
 
-   	def heatingSetpoint = device.currentValue("heatingSetpoint")
-	def coolingSetpoint = device.currentValue("coolingSetpoint")
-	def thermostatSetpoint = device.currentValue("thermostatSetpoint").toDouble()
+   	def heatingSetpoint = device.currentValue("heatingSetpoint").toDouble()
+	def coolingSetpoint = device.currentValue("coolingSetpoint").toDouble()
+    def thermostatSetpoint = device.currentValue("thermostatSetpoint").toDouble()
+    if (device.currentValue("thermostatOpertaingState") == 'idle') {
+    	if (thermostatSetpoint == heatingSetpoint) {
+        	heatingSetpoint = heatingSetpoint + device.currentValue("heatDifferential").toDouble() 	// correct from the display value
+            thermostatSetpoint = heatingSetpoint
+            coolingSetpoint = coolingSetpoint - device.currentValue("coolDifferential").toDouble()
+        } else if (thermostatSetpoint == coolingSetpoint) {
+         	coolingSetpoint = coolingSetpoint - device.currentValue("coolDifferential").toDouble()
+            thermostatSetpoint = coolingSetpoint
+            heatingSetpoint = heatingSetpoint + device.currentValue("heatDifferential").toDouble()
+        } else {
+          	heatingSetpoint = heatingSetpoint + device.currentValue("heatDifferential").toDouble()
+            coolingSetpoint = coolingSetpoint - device.currentValue("coolDifferential").toDouble()
+        }
+    }
+	
 	LOG("raiseSetpoint() mode = ${mode}, heatingSetpoint: ${heatingSetpoint}, coolingSetpoint:${coolingSetpoint}, thermostatSetpoint:${thermostatSetpoint}", 4)
 
    	if (thermostatSetpoint) {
@@ -992,6 +1297,20 @@ void lowerSetpoint() {
     	def heatingSetpoint = device.currentValue("heatingSetpoint")
 		def coolingSetpoint = device.currentValue("coolingSetpoint")
 		def thermostatSetpoint = device.currentValue("thermostatSetpoint").toDouble()
+    	if (device.currentValue("thermostatOpertaingState") == 'idle') {
+    		if (thermostatSetpoint == heatingSetpoint) {
+        		heatingSetpoint = heatingSetpoint + device.currentValue("heatDifferential").toDouble() 	// correct from the display value
+            	thermostatSetpoint = heatingSetpoint
+            	coolingSetpoint = coolingSetpoint - device.currentValue("coolDifferential").toDouble()
+        	} else if (thermostatSetpoint == coolingSetpoint) {
+         		coolingSetpoint = coolingSetpoint - device.currentValue("coolDifferential").toDouble()
+            	thermostatSetpoint = coolingSetpoint
+            	heatingSetpoint = heatingSetpoint + device.currentValue("heatDifferential").toDouble()
+        	} else {
+          		heatingSetpoint = heatingSetpoint + device.currentValue("heatDifferential").toDouble()
+            	coolingSetpoint = coolingSetpoint - device.currentValue("coolDifferential").toDouble()
+        	}	
+    	}
 		LOG("lowerSetpoint() mode = ${mode}, heatingSetpoint: ${heatingSetpoint}, coolingSetpoint:${coolingSetpoint}, thermostatSetpoint:${thermostatSetpoint}", 4)
 
         if (thermostatSetpoint) {
@@ -1012,7 +1331,6 @@ void lowerSetpoint() {
 		// Wait 4 seconds before sending in case we hit the buttons again
 		runIn(4, "alterSetpoint", [data: [value:targetvalue], overwrite: true]) //when user click button this runIn will be overwrite
 	}
-
 }
 
 //called by raiseSetpoint() and lowerSetpoint()
@@ -1020,8 +1338,27 @@ void alterSetpoint(temp) {
 	def mode = device.currentValue("thermostatMode")
 	def heatingSetpoint = device.currentValue("heatingSetpoint")
 	def coolingSetpoint = device.currentValue("coolingSetpoint")
+    def thermostatSetpoint = device.currentValue("thermostatSetpoint")
+    if (device.currentValue("thermostatOpertaingState") == 'idle') {
+    	if (thermostatSetpoint == heatingSetpoint) {
+        	heatingSetpoint = heatingSetpoint + device.currentValue("heatDifferential").toDouble() 	// correct from the display value
+            thermostatSetpoint = heatingSetpoint
+            coolingSetpoint = coolingSetpoint - device.currentValue("coolDifferential").toDouble()
+        } else if (thermostatSetpoint == coolingSetpoint) {
+         	coolingSetpoint = coolingSetpoint - device.currentValue("coolDifferential").toDouble()
+            thermostatSetpoint = coolingSetpoint
+            heatingSetpoint = heatingSetpoint + device.currentValue("heatDifferential").toDouble()
+        } else {
+          	heatingSetpoint = heatingSetpoint + device.currentValue("heatDifferential").toDouble()
+            coolingSetpoint = coolingSetpoint - device.currentValue("coolDifferential").toDouble()
+        }
+    }
     def currentTemp = device.currentValue("temperature")
-    def saveThermostatSetpoint = device.currentValue("thermostatSetpoint")
+    def heatHigh = device.currentValue('heatHigh')
+    def heatLow = device.currentValue('heatLow')
+    def coolHigh = device.currentValue('coolHigh')
+    def coolLow = device.currentValue('coolLow')
+    def saveThermostatSetpoint = thermostatSetpoint
 	def deviceId = getDeviceId()
 
 	def targetHeatingSetpoint = heatingSetpoint
@@ -1031,6 +1368,8 @@ void alterSetpoint(temp) {
 
 	//step1: check thermostatMode
 	if (mode == "heat"){
+    	if (temp.value > heatHigh) targetHeatingSetpoint = heatHigh
+        if (temp.value < heatLow) targetHeatingSetpoint = heatLow
 		if (temp.value > coolingSetpoint){
 			targetHeatingSetpoint = temp.value
 			targetCoolingSetpoint = temp.value
@@ -1040,6 +1379,8 @@ void alterSetpoint(temp) {
 		}
 	} else if (mode == "cool") {
 		//enforce limits before sending request to cloud
+    	if (temp.value > coolHigh) targetHeatingSetpoint = coolHigh
+        if (temp.value < coolLow) targetHeatingSetpoint = coolLow
 		if (temp.value < heatingSetpoint){
 			targetHeatingSetpoint = temp.value
 			targetCoolingSetpoint = temp.value
@@ -1051,11 +1392,15 @@ void alterSetpoint(temp) {
     	// Make changes based on our Smart Auto mode
         if (temp.value > currentTemp) {
         	// Change the heat settings to the new setpoint
+            if (temp.value > heatHigh) targetHeatingSetpoint = heatHigh
+        	if (temp.value < heatLow) targetHeatingSetpoint = heatLow
             LOG("alterSetpoint() - Smart Auto setting setpoint: ${temp.value}. Updating heat target")
             targetHeatingSetpoint = temp.value
             targetCoolingSetpoint = (temp.value > coolingSetpoint) ? temp.value : coolingSetpoint
 		} else {
         	// Change the cool settings to the new setpoint
+            if (temp.value > coolHigh) targetHeatingSetpoint = coolHigh
+        	if (temp.value < coolLow) targetHeatingSetpoint = coolLow
 			LOG("alterSetpoint() - Smart Auto setting setpoint: ${temp.value}. Updating cool target")
             targetCoolingSetpoint = temp.value
 
@@ -1090,11 +1435,13 @@ void alterSetpoint(temp) {
     runIn(15, "poll")
 }
 
+// This just updates the generic multiAttributeTile - text should match the Thermostat mAT
 def generateStatusEvent() {
 	def mode = device.currentValue("thermostatMode")
 	def heatingSetpoint = device.currentValue("heatingSetpoint")
 	def coolingSetpoint = device.currentValue("coolingSetpoint")
 	def temperature = device.currentValue("temperature")
+    def operatingState = device.currentValue("thermostatOperatingState")
 
 	def statusText	
 	LOG("Generate Status Event for Mode = ${mode}", 4)
@@ -1102,35 +1449,55 @@ def generateStatusEvent() {
 	LOG("Heating setpoint = ${heatingSetpoint}", 4)
 	LOG("Cooling setpoint = ${coolingSetpoint}", 4)
 	LOG("HVAC Mode = ${mode}", 4)	
+    LOG("Operating State = ${operatingState}", 4)
 
 	if (mode == "heat") {
-		if (temperature >= heatingSetpoint) {
-			statusText = "Right Now: Idle"
+//		if (temperature >= heatingSetpoint) {
+		if (operatingState == "fan only") {
+        	statusText = "Fan Only"
+        } else if (operatingState != "heating") {
+			statusText = "Idle (Heat)"
 		} else {
 			statusText = "Heating to ${heatingSetpoint}°"
 		}
 	} else if (mode == "cool") {
-		if (temperature <= coolingSetpoint) {
-			statusText = "Right Now: Idle"
+//		if (temperature <= coolingSetpoint) {
+		if (operatingState == "fan only") {
+        	statusText = "Fan Only"
+		} else if (operatingState != "cooling") {
+			statusText = "Idle (Cool)"
 		} else {
 			statusText = "Cooling to ${coolingSetpoint}°"
 		}
 	} else if (mode == "auto") {
-		statusText = "Right Now: Auto (Heat: ${heatingSetpoint}/Cool: ${coolingSetpoint})"
+		if (operatingState == "fan only") {
+        	statusText = "Fan Only"
+    	} else if (operatingState == "heating") {
+        	statusText = "Heating to ${heatingSetpoint}° (Auto)"
+        } else if (operatingState == "cooling") {
+        	statusText = "Cooling to ${coolingSetpoint}° (Auto)"
+        } else {
+			statusText = "Idle (Auto ${heatingSetpoint}°-${coolingSetpoint}°)"
+        }
 	} else if (mode == "off") {
 		statusText = "Right Now: Off"
 	} else if (mode == "emergencyHeat" || mode == "emergency heat" || mode == "emergency") {
-		statusText = "Emergency Heat"
+    	if (operatingState != "heating") {
+			statusText = "Idle (Emergency Heat)"
+		} else {
+			statusText = "Emergency Heating to ${heatingSetpoint}°"
+		}
 	} else {
 		statusText = "${mode}?"
 	}
 	LOG("Generate Status Event = ${statusText}", 4)
-	sendEvent("name":"thermostatStatus", "value":statusText, "description":statusText, displayed: true)
+	sendEvent(name:"thermostatStatus", value:statusText, description:statusText, displayed: false)
 }
 
-//generate custom mobile activity feeds event
+// generate custom mobile activity feeds event
+// (Need to clean this up to remove as many characters as possible, else it isn't readable in the Mobile App
 def generateActivityFeedsEvent(notificationMessage) {
-	sendEvent(name: "notificationMessage", value: "$device.displayName $notificationMessage", descriptionText: "$device.displayName $notificationMessage", displayed: true)
+	sendEvent(name: "notificationMessage", value: "${device.displayName} ${notificationMessage}", descriptionText: "${device.displayName} ${notificationMessage}", displayed: true)
 }
 
 def noOp() {
@@ -1138,7 +1505,9 @@ def noOp() {
 }
 
 def getSliderRange() {
-	return wantMetric ? "(15..30)" : "(50..90)"
+	// should be returning the attributes heatRange and coolRange (once they are populated), but you can't get access to those while the forms are created (even after running for days).
+	// return "'\${wantMetric()}'" ? "(5..35)" : "(45..95)"
+    return "(5..90)" 
 }
 
 // Built in functions from SmartThings
@@ -1156,7 +1525,6 @@ private def cToF(temp) {
 private def fToC(temp) {
     return fahrenheitToCelsius(temp)
 }
-
 
 private def getImageURLRoot() {
 	return "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/dark/"
@@ -1184,12 +1552,16 @@ private def whatHoldType() {
 }
 
 private debugLevel(level=3) {
-	def debugLvlNum = parent.settings.debugLevel?.toInteger() ?: 3
+	def debugLvlNum
+    if (device.currentValue("debugLevel")) {
+		debugLvlNum = device.currentValue("debugLevel").toInteger() ?: parent.settings.debugLevel?.toInteger() ?: 3
+    } else {
+    	debugLvlNum = parent.settings.debugLevel?.toInteger() ?: 3
+    }
     def wantedLvl = level?.toInteger()
     
     return ( debugLvlNum >= wantedLvl )
 }
-
 
 private def LOG(message, level=3, child=null, logType="debug", event=false, displayEvent=false) {
 	def prefix = ""
@@ -1198,12 +1570,11 @@ private def LOG(message, level=3, child=null, logType="debug", event=false, disp
     	log."${logType}" "${prefix}${message}"
         // log.debug message
         if (event) { debugEvent(message, displayEvent) }        
-	}    
+	}  
+    if (level < 4) log.info message
 }
 
-
 private def debugEvent(message, displayEvent = false) {
-
 	def results = [
 		name: "appdebug",
 		descriptionText: message,
@@ -1212,8 +1583,6 @@ private def debugEvent(message, displayEvent = false) {
 	if ( debugLevel(4) ) { log.debug "Generating AppDebug Event: ${results}" }
 	sendEvent (results)
 }
-
-
 
 def getTempColors() {
 	def colorMap
@@ -1242,6 +1611,24 @@ def getTempColors() {
 
 		[value: 76, color: "#d04e00"],
 		[value: 95, color: "#d04e00"],
-		[value: 99, color: "#d04e00"]
+		[value: 99, color: "#d04e00"],
+        
+        [value: 451, color: "#ffa81e"] // Nod to the book and temp that paper burns. Used to catch when the device is offline
 	]
 }
+
+def getStockTempColors() {
+	def colorMap
+    
+    colorMap = [
+    	[value: 31, color: "#153591"],
+        [value: 44, color: "#1e9cbb"],
+        [value: 59, color: "#90d2a7"],
+        [value: 74, color: "#44b621"],
+        [value: 84, color: "#f1d801"],
+        [value: 95, color: "#d04e00"],
+        [value: 96, color: "#bc2323"]
+    ]       
+}
+Contact GitHub API Training Shop Blog About
+© 2017 GitHub, Inc. Terms Privacy Security Status Help
