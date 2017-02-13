@@ -37,10 +37,12 @@
  *	0.10.8 - Added programsList attribute - list of available "climates" on this thermostat
  *  0.10.9 - Fixed double FtoC conversions
  *	0.10.10- holdEndsAt suppression
+ *	0.10.11- Misc notification cleanup
+ *	0.10.12- Fixed humiditySetpoint reporting
  *
  */
 
-def getVersionNum() { return "0.10.10" }
+def getVersionNum() { return "0.10.12" }
 private def getVersionLabel() { return "Ecobee Thermostat Version ${getVersionNum()}" }
 import groovy.json.JsonSlurper
  
@@ -634,15 +636,16 @@ def generateEvent(Map results) {
 					break;
 				
 				case 'humidity':
-					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Humidity is ${value}% (${device.currentValue('humiditySetpoint')}%)", isStateChange: true, displayed: true]
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Humidity is ${value}% (setpoint: ${device.currentValue('humiditySetpoint')}%)", isStateChange: true, displayed: true]
             		break;
 				
 				case 'humiditySetpoint':
-					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Humidity setpoint is ${value}%", isStateChange: true, displayed: true]
-		            break;
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Humidity setpoint is ${value}%", isStateChange: true, displayed: false]
+		            sendEvent( name: 'humidity', linkText: linkText, handlerName: 'humidity', descriptionText: "Humidity is ${device.currentValue('humidity')}% (setpoint: ${value}%)", isStateChange: false, displayed: true )
+                    break;
 				
 				case 'currentProgramName':
-					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Program is ${value}%", isStateChange: true, displayed: true]
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Program is ${value}", isStateChange: true, displayed: true]
 					break;
 				
 				case 'apiConnected':
@@ -1090,7 +1093,7 @@ def generateProgramEvent(program, failedProgram=null) {
 
 	sendEvent("name":"thermostatStatus", "value":"Setpoint updating...", "description":statusText, displayed: false)
 	sendEvent("name":"currentProgramName", "value":"Hold: "+program.capitalize())
-    sendEvent("name":"currentProgramId", "value":program)
+    sendEvent("name":"currentProgramId", "value":program, displayed: false)
     
     def tileName = ""
     
